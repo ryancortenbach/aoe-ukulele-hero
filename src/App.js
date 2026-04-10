@@ -9,21 +9,26 @@ import { startKeyboardSource } from "./input/keyboardSource";
 export default function App() {
   const [screen, setScreen] = useState("menu");
   const [song, setSong] = useState(null);
+  const [difficulty, setDifficulty] = useState("medium");
   const [stats, setStats] = useState(null);
 
-  // Boot the keyboard input source once. Serial/WS are opt-in from UI.
   useEffect(() => { startKeyboardSource(); }, []);
 
   return (
     <>
       {screen === "menu" && (
         <Menu
-          onStart={(s) => { setSong(s); setScreen("game"); }}
+          onStart={(s, d) => {
+            setSong(s);
+            setDifficulty(d);
+            setScreen("game");
+          }}
         />
       )}
       {screen === "game" && song && (
         <Game
           song={song}
+          difficulty={difficulty}
           onFinish={(finalStats) => { setStats(finalStats); setScreen("results"); }}
           onExit={() => setScreen("menu")}
         />
@@ -31,13 +36,13 @@ export default function App() {
       {screen === "results" && song && stats && (
         <Results
           song={song}
+          difficulty={difficulty}
           stats={stats}
           onReplay={() => setScreen("game")}
           onMenu={() => setScreen("menu")}
         />
       )}
 
-      {/* Global controller status overlay — always visible */}
       <ControllerStatus />
     </>
   );

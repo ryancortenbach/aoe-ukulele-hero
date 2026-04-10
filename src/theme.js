@@ -51,11 +51,48 @@ export const COLORS = {
   miss: "#ff4d6d",
 };
 
-// Timing windows (ms around the hit moment).
+// Timing windows (ms around the hit moment). Used as a default —
+// per-difficulty windows live in DIFFICULTIES below.
 export const TIMING = {
   perfect: 50,
   good: 100,
-  // anything worse and the note is a miss.
+};
+
+// Difficulty presets: note density, timing windows, and chart variety.
+export const DIFFICULTIES = {
+  easy: {
+    id: "easy",
+    label: "Easy",
+    color: "#54e4e9",
+    subdivision: 0.5,  // half-notes (one every 2 beats)
+    perfect: 80,
+    good: 160,
+    holdChance: 0.08,
+    chordChance: 0,
+    scoreMult: 0.7,
+  },
+  medium: {
+    id: "medium",
+    label: "Medium",
+    color: "#ffd95a",
+    subdivision: 1,    // quarter-notes (one per beat)
+    perfect: 50,
+    good: 110,
+    holdChance: 0.12,
+    chordChance: 0.05,
+    scoreMult: 1.0,
+  },
+  hard: {
+    id: "hard",
+    label: "Hard",
+    color: "#f682f4",
+    subdivision: 2,    // eighth-notes (two per beat)
+    perfect: 35,
+    good: 75,
+    holdChance: 0.18,
+    chordChance: 0.15,
+    scoreMult: 1.5,
+  },
 };
 
 export const SCORE = {
