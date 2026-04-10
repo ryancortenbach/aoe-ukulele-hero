@@ -1,0 +1,15 @@
+{
+  "name": "ukulele-hero-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Serial → WebSocket bridge for Ukulele Hero Arduino controller",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "list-ports": "node -e \"require('serialport').SerialPort.list().then(p=>console.log(p))\""
+  },
+  "dependencies": {
+    "serialport": "^12.0.0",
+    "ws": "^8.18.0"
+  }
+}

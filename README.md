@@ -1,70 +1,116 @@
-# Getting Started with Create React App
+# Ukulele Hero
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A Guitar-Hero-style rhythm game for ukulele, built in React. Ships with a
+hardware input framework so you can play it on a keyboard, on screen, or
+via an Arduino with 4 real buttons.
 
-## Available Scripts
+## Quick start
 
-In the project directory, you can run:
+```bash
+npm install
+npm start
+```
 
-### `npm start`
+Then open http://localhost:3000.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+Play with **A S D F** (G/C/E/A strings), tap on mobile, or hook up an
+Arduino — see [`hardware/README.md`](hardware/README.md).
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Architecture
 
-### `npm test`
+```
+src/
+├── App.js                    # state machine: menu → game → results
+├── theme.js                  # design tokens + gameplay constants
+├── songs.js                  # sample song charts
+├── index.css                 # global reset + keyframes
+├── components/
+│   ├── Menu.jsx              # title screen, song select
+│   ├── Game.jsx              # scrolling highway, game loop, hit detection
+│   ├── Hud.jsx               # score, combo, multiplier, progress bar
+│   ├── Countdown.jsx         # 3-2-1-GO
+│   ├── Results.jsx           # end screen with grade, stats
+│   └── ControllerStatus.jsx  # input-source overlay + Connect Arduino
+└── input/
+    ├── inputManager.js       # central event bus (hw-agnostic)
+    ├── keyboardSource.js     # A/S/D/F
+    ├── serialSource.js       # Web Serial → Arduino (Chrome/Edge)
+    └── websocketSource.js    # ws:// fallback (any browser + Node bridge)
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+hardware/
+├── arduino/UkuleleHero/
+│   └── UkuleleHero.ino       # firmware, 4 debounced buttons
+├── bridge/
+│   ├── server.js             # Node serial→websocket bridge
+│   └── package.json
+└── README.md                 # wiring + flashing + protocol
+```
 
-### `npm run build`
+### Input pipeline
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+All input sources push the same normalized event into a central bus:
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```js
+{ lane: 0|1|2|3, type: 'press' | 'release', t: performance.now() }
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+The game loop subscribes once. Keyboard, on-screen touch, Web Serial
+(Arduino), and WebSocket (bridge) are interchangeable. Adding a new input
+source — a MIDI controller, a gamepad, a motion sensor — means writing one
+file in `src/input/` that calls `emit(lane, type)`.
 
-### `npm run eject`
+### Game loop
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+`components/Game.jsx` runs a single `requestAnimationFrame` loop. Game state
+lives in a ref so the loop doesn't fight React renders; a lightweight
+`force` state call ticks React at 60fps for the scroll + score paint.
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Timing windows (in `theme.js`):
+- Perfect: ±50ms → 100pts
+- Good: ±100ms → 50pts
+- Miss: beyond that or note passes the hit line → combo reset
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+Combo multipliers kick in at 10 / 25 / 50 combo (2x / 3x / 4x).
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+### Songs
 
-## Learn More
+Charts are arrays of `{ lane, time }`. `songs.js` ships a helper
+`chartFromPattern()` for authoring beat patterns as ASCII:
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+```
+G
+-
+C
+-
+GA
+-
+CE
+```
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+Each row is one rhythmic unit (half-beat by default). To add audio later,
+set `song.audioSrc` and play it from `Game.jsx` at `phase === "playing"`.
 
-### Code Splitting
+## Hardware mode
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+See [`hardware/README.md`](hardware/README.md) for wiring, flashing, and the
+two ways to connect (Web Serial or Node bridge). Both paths feed
+`src/input/inputManager.js`, which means the game code never has to know
+whether an input came from a key, a finger, or a soldered arcade button.
 
-### Analyzing the Bundle Size
+## Roadmap
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+- [ ] Audio: Web Audio strum tones, then real uke samples
+- [ ] More songs + a chart editor
+- [ ] Latency calibration screen (auto-offset for hardware round-trip)
+- [ ] Sustained notes (hold frets)
+- [ ] Chord mode (multi-lane simultaneous hits)
+- [ ] Local high scores via localStorage
 
-### Making a Progressive Web App
+## References
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Projects worth looking at while building this:
+- [KozielGPC/piano-hero](https://github.com/KozielGPC/piano-hero) — React+TS falling notes, editor
+- [ericcalabrese/guitarHero](https://github.com/ericcalabrese/guitarHero) — CRA React
+- [detalhe/GuitarHeroJS](https://github.com/detalhe/GuitarHeroJS) — Three.js 3D fretboard
+- [jhedev96/JS-Hero](https://github.com/jhedev96/JS-Hero) — live demo
+- [clonehero-game](https://github.com/clonehero-game) — for `.chart` format
