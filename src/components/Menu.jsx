@@ -81,6 +81,8 @@ export default function Menu({ onStart }) {
             <button
               key={d.id}
               onClick={() => setDifficulty(d.id)}
+              aria-pressed={active}
+              aria-label={`Difficulty: ${d.label}`}
               style={{
                 ...styles.diffBtn,
                 color: active ? "#0d0d1a" : d.color,
@@ -151,10 +153,12 @@ export default function Menu({ onStart }) {
         style={{
           ...styles.playBtn,
           opacity: song ? 1 : 0.45,
-          pointerEvents: song ? "auto" : "none",
+          cursor: song ? "pointer" : "not-allowed",
         }}
+        disabled={!song}
+        aria-label={song ? `Play ${song.title} on ${difficulty}` : "Play (select a song first)"}
         onClick={() => song && onStart(song, difficulty)}
-        onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.06)")}
+        onMouseEnter={(e) => song && (e.currentTarget.style.transform = "scale(1.06)")}
         onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
       >
         ▶  PLAY
@@ -174,6 +178,7 @@ function SongCard({ song, selected, onSelect, onRemove, highScore }) {
   return (
     <button
       onClick={onSelect}
+      aria-pressed={selected}
       style={{
         ...styles.songCard,
         borderColor: selected ? color : "#ffffff22",
@@ -209,12 +214,13 @@ function SongCard({ song, selected, onSelect, onRemove, highScore }) {
         </div>
       </div>
       {onRemove && (
-        <span
-          role="button"
+        <button
+          type="button"
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
           style={styles.removeBtn}
-          title="Remove"
-        >✕</span>
+          title="Remove song"
+          aria-label={`Remove ${song.title}`}
+        >✕</button>
       )}
     </button>
   );
@@ -454,16 +460,19 @@ const styles = {
     position: "absolute",
     top: 6,
     right: 8,
-    width: 20,
-    height: 20,
+    width: 22,
+    height: 22,
     borderRadius: "50%",
     background: "#ffffff15",
-    color: "#ffffffaa",
+    border: "none",
+    color: "#ffffffcc",
     fontSize: "0.7rem",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     cursor: "pointer",
+    padding: 0,
+    lineHeight: 1,
   },
   addBtn: {
     display: "flex",

@@ -14,12 +14,12 @@ export default function PauseMenu({ onResume, onRestart, onQuit }) {
   }, [onResume]);
 
   return (
-    <div style={styles.root}>
+    <div style={styles.root} role="dialog" aria-modal="true" aria-label="Game paused">
       <div style={styles.card}>
         <div style={styles.label}>PAUSED</div>
         <div style={styles.title}>Take a breath</div>
         <div style={styles.btns}>
-          <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={onResume}>
+          <button autoFocus style={{ ...styles.btn, ...styles.btnPrimary }} onClick={onResume}>
             ▶  RESUME
           </button>
           <button style={{ ...styles.btn, ...styles.btnGhost }} onClick={onRestart}>
@@ -48,7 +48,7 @@ const styles = {
     justifyContent: "center",
     zIndex: 100,
     fontFamily: FONT_STACK,
-    animation: "uh-combo-flash 0.3s ease-out forwards",
+    animation: "uh-fade-in 0.2s ease-out",
   },
   card: {
     background: "#0d0d1aee",

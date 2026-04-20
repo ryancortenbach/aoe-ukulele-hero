@@ -35,6 +35,8 @@ export default function ControllerStatus() {
           color: serial || ws ? "#54e4e9" : "#ffffffaa",
         }}
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-label="Input source settings"
       >
         <span style={styles.dot(serial || ws ? "#54e4e9" : "#ffffff66")} />
         {serial || ws ? "CONTROLLER" : "KEYBOARD"}

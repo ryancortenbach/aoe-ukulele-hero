@@ -18,6 +18,20 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Accessible focus ring — only shown for keyboard users */
+button:focus { outline: none; }
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid #54e4e9;
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+@keyframes uh-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* Global keyframes used across components */
 @keyframes uh-ripple-fade {
   from { opacity: 1; transform: scale(0.8); }

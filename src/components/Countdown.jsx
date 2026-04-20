@@ -14,7 +14,7 @@ export default function Countdown({ onDone }) {
   }, [n, onDone]);
 
   return (
-    <div style={styles.root}>
+    <div style={styles.root} aria-live="assertive" aria-atomic="true">
       <div key={n} style={styles.num}>
         {n === 0 ? "GO!" : n}
       </div>

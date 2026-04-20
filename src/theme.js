@@ -58,6 +58,13 @@ export const TIMING = {
   good: 100,
 };
 
+// Extra calibration added on top of the AudioContext-reported
+// baseLatency + outputLatency. Real-world HTMLAudioElement playback
+// carries additional element-level buffering that the Web Audio API
+// doesn't report. ~60 ms empirically lines up the visual hit line with
+// what the player hears on typical desktop browsers. Tune if needed.
+export const AUDIO_LATENCY_MS = 60;
+
 // Difficulty presets: note density, timing windows, and chart variety.
 export const DIFFICULTIES = {
   easy: {

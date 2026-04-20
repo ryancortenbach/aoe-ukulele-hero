@@ -29,10 +29,10 @@ export default function Results({ song, stats, onReplay, onMenu }) {
         </div>
 
         <div style={styles.btnRow}>
-          <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={onReplay}>
+          <button autoFocus style={{ ...styles.btn, ...styles.btnPrimary }} onClick={onReplay} aria-label="Replay song">
             ↻ REPLAY
           </button>
-          <button style={{ ...styles.btn, ...styles.btnGhost }} onClick={onMenu}>
+          <button style={{ ...styles.btn, ...styles.btnGhost }} onClick={onMenu} aria-label="Back to menu">
             MENU
           </button>
         </div>
@@ -79,8 +79,8 @@ const styles = {
   },
   card: {
     position: "relative",
-    minWidth: "460px",
-    padding: "2.5rem 3rem",
+    width: "min(460px, calc(100vw - 2rem))",
+    padding: "clamp(1.5rem, 4vw, 2.5rem) clamp(1.5rem, 5vw, 3rem)",
     borderRadius: "20px",
     background: "#ffffff08",
     border: "1px solid #ffffff22",
@@ -146,6 +146,7 @@ const styles = {
     fontSize: "1rem",
     fontFamily: FONT_STACK,
     letterSpacing: "0.1em",
+    transition: "transform 0.15s, box-shadow 0.15s, background 0.15s",
   },
   btnPrimary: {
     background: "linear-gradient(135deg, #f682f4, #4d9eff)",
