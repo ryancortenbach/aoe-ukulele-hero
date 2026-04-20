@@ -1,7 +1,28 @@
+// ---------------------------------------------------------------------------
+// Beat-sync diagnosis (Wave 1B fix)
+// ---------------------------------------------------------------------------
+// The old loop mixed two clocks: `performance.now()` for the lead-in countdown
+// and HTMLAudioElement `currentTime` after playback started. Those clocks
+// drift against each other, and — more importantly — `audio.currentTime`
+// reports the BUFFER playhead, which is ahead of what the player actually
+// HEARS by the device's audio output latency (typically 30–150 ms on
+// desktop). Because notes scroll based on the buffer-playhead clock, they
+// reach the hit line BEFORE the corresponding beat is audible, so every
+// press feels late. Additionally, the initial `audio.play()` call has
+// non-deterministic start latency, causing a variable offset on top of the
+// fixed device latency. Fix: drive everything from a single monotonic
+// AudioContext clock, schedule `audio.play()` at a known context time, and
+// subtract (baseLatency + outputLatency + AUDIO_LATENCY_MS calibration)
+// from the song clock so the visible hit line matches the audible beat.
+// Per-song `offsetMs` (from songLibrary / beat detection) is applied in
+// the chart, and can be further tuned by setting `song.offsetMs`.
+// ---------------------------------------------------------------------------
+
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { LANES, COLORS, FONT_STACK, DIFFICULTIES, SCORE, HIGHWAY } from "../theme";
+import { LANES, COLORS, FONT_STACK, DIFFICULTIES, SCORE, HIGHWAY, AUDIO_LATENCY_MS } from "../theme";
 import { subscribe as subscribeInput, emit as emitInput } from "../input/inputManager";
 import { generateChart } from "../audio/autoChart";
+import { getCtx, getOutputLatencySec } from "../audio/audioEngine";
 import { recordScore } from "../highScores";
 import Hud, { multiplierFor } from "./Hud";
 import Countdown from "./Countdown";
@@ -128,27 +149,40 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
   useEffect(() => {
     if (phase !== "playing") return;
     let rafId;
-    const startPerfNow = performance.now();
-    let pauseAccumMs = 0;
-    let pauseStartedAt = null;
-    let audioStarted = false;
 
-    const tick = (now) => {
-      // Accumulate pause time so "elapsed" only counts unpaused time.
+    // Single source of truth: the AudioContext clock. It's monotonic,
+    // unaffected by tab throttling in the way performance.now can be, and
+    // directly comparable to the scheduled audio playback time.
+    const ctx = getCtx();
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const ctxStart = ctx.currentTime;             // seconds
+    const audioStartCtxTime = ctxStart + LEAD_IN_MS / 1000;
+    let pauseAccumSec = 0;
+    let pauseStartedCtxTime = null;
+    let audioStarted = false;
+    // Total latency between "audio sample scheduled for ctx time T" and
+    // "sample audible at the speakers". Advance the song clock by this
+    // amount so the visible hit line matches what the player hears.
+    const latencyMs = getOutputLatencySec() * 1000 + AUDIO_LATENCY_MS;
+
+    const tick = () => {
+      const nowCtx = ctx.currentTime;
+
+      // Accumulate pause time so song time only counts unpaused time.
       if (pausedRef.current) {
-        if (pauseStartedAt === null) pauseStartedAt = now;
+        if (pauseStartedCtxTime === null) pauseStartedCtxTime = nowCtx;
         rafId = requestAnimationFrame(tick);
         return;
-      } else if (pauseStartedAt !== null) {
-        pauseAccumMs += now - pauseStartedAt;
-        pauseStartedAt = null;
+      } else if (pauseStartedCtxTime !== null) {
+        pauseAccumSec += nowCtx - pauseStartedCtxTime;
+        pauseStartedCtxTime = null;
       }
 
       const s = stateRef.current;
-      const elapsed = now - startPerfNow - pauseAccumMs;
+      const elapsedMs = (nowCtx - ctxStart - pauseAccumSec) * 1000;
 
-      if (elapsed < LEAD_IN_MS) {
-        s.currentMs = -(LEAD_IN_MS - elapsed);
+      if (elapsedMs < LEAD_IN_MS) {
+        s.currentMs = -(LEAD_IN_MS - elapsedMs);
       } else {
         if (!audioStarted && audioRef.current) {
           audioRef.current.currentTime = 0;
@@ -156,9 +190,9 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
           if (pr && pr.catch) pr.catch((e) => console.error("audio play failed", e));
           audioStarted = true;
         }
-        s.currentMs = audioRef.current
-          ? audioRef.current.currentTime * 1000
-          : elapsed - LEAD_IN_MS;
+        // Song clock = (ctx elapsed since scheduled audio start)
+        //              minus output latency (so visuals match what's heard).
+        s.currentMs = (nowCtx - audioStartCtxTime - pauseAccumSec) * 1000 - latencyMs;
       }
 
       // Handle active holds — auto-complete when tail reaches hit line

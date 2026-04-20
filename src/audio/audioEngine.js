@@ -5,12 +5,26 @@
 import { analyze, guess } from "web-audio-beat-detector";
 
 let _ctx = null;
-function getCtx() {
+export function getCtx() {
   if (!_ctx) {
     const C = window.AudioContext || window.webkitAudioContext;
     _ctx = new C();
   }
   return _ctx;
+}
+
+// Total output latency (seconds) for the shared AudioContext. This is the
+// gap between "sample scheduled to play at ctx.currentTime = T" and "sample
+// actually hitting the speakers". We subtract it from the song clock so
+// visual notes line up with what the player HEARS (not with the buffer
+// playhead, which is always ahead of what's audible).
+export function getOutputLatencySec() {
+  const ctx = getCtx();
+  // outputLatency is the device-reported latency; baseLatency is the
+  // context's internal buffering latency. Sum them for total.
+  const out = typeof ctx.outputLatency === "number" ? ctx.outputLatency : 0;
+  const base = typeof ctx.baseLatency === "number" ? ctx.baseLatency : 0;
+  return out + base;
 }
 
 export async function decodeArrayBuffer(arrayBuffer) {
