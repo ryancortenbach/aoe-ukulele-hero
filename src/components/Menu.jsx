@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { LANES, COLORS, FONT_STACK, DIFFICULTIES } from "../theme";
 import { useSongLibrary, addUploadedFile, removeSong } from "../audio/songLibrary";
 import { getHighScore } from "../highScores";
+import { playSfx } from "../audio/sfxPlayer";
 
 export default function Menu({ onStart }) {
   const { songs, loadingIds } = useSongLibrary();
@@ -80,7 +81,7 @@ export default function Menu({ onStart }) {
           return (
             <button
               key={d.id}
-              onClick={() => setDifficulty(d.id)}
+              onClick={() => { if (d.id !== difficulty) playSfx('menu-select'); setDifficulty(d.id); }}
               aria-pressed={active}
               aria-label={`Difficulty: ${d.label}`}
               style={{
@@ -113,7 +114,7 @@ export default function Menu({ onStart }) {
               song={s}
               selected={s.id === selectedId}
               highScore={getHighScore(s.id, difficulty)}
-              onSelect={() => setSelectedId(s.id)}
+              onSelect={() => { if (s.id !== selectedId) playSfx('menu-select'); setSelectedId(s.id); }}
               onRemove={s.source === "upload" ? () => {
                 if (selectedId === s.id) setSelectedId(null);
                 removeSong(s.id);
@@ -157,7 +158,7 @@ export default function Menu({ onStart }) {
         }}
         disabled={!song}
         aria-label={song ? `Play ${song.title} on ${difficulty}` : "Play (select a song first)"}
-        onClick={() => song && onStart(song, difficulty)}
+        onClick={() => { if (song) { playSfx('menu-confirm'); onStart(song, difficulty); } }}
         onMouseEnter={(e) => song && (e.currentTarget.style.transform = "scale(1.06)")}
         onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
       >

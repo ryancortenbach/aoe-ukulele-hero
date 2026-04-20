@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { FONT_STACK } from "../theme";
+import { playSfx } from "../audio/sfxPlayer";
 
 export default function Countdown({ onDone }) {
   const [n, setN] = useState(3);
 
   useEffect(() => {
     if (n === 0) {
+      playSfx('countdown-go');
       const id = setTimeout(onDone, 400);
       return () => clearTimeout(id);
     }
+    playSfx('countdown-tick');
     const id = setTimeout(() => setN((x) => x - 1), 800);
     return () => clearTimeout(id);
   }, [n, onDone]);

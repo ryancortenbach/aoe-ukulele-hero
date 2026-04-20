@@ -24,6 +24,7 @@ import { subscribe as subscribeInput, emit as emitInput } from "../input/inputMa
 import { generateChart } from "../audio/autoChart";
 import { getCtx, getOutputLatencySec } from "../audio/audioEngine";
 import { recordScore } from "../highScores";
+import { initSfx, playSfx } from "../audio/sfxPlayer";
 import Hud, { multiplierFor } from "./Hud";
 import Countdown from "./Countdown";
 import PauseMenu from "./PauseMenu";
@@ -62,9 +63,25 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
   const audioRef = useRef(null);
   const pausedRef = useRef(false);
   pausedRef.current = paused;
+  const prevComboRef = useRef(0);
+
+  // Init SFX once on mount so assets are decoded before first input.
+  useEffect(() => { initSfx(); }, []);
+
+  // Fire combo SFX only when combo *crosses* a threshold (not every frame).
+  const checkComboThreshold = useCallback((newCombo) => {
+    const prev = prevComboRef.current;
+    if (newCombo !== prev) {
+      if (prev < 10 && newCombo >= 10) playSfx('combo-10');
+      else if (prev < 25 && newCombo >= 25) playSfx('combo-25');
+      else if (prev < 50 && newCombo >= 50) playSfx('combo-50');
+      prevComboRef.current = newCombo;
+    }
+  }, []);
 
   const restart = useCallback(() => {
     stateRef.current = createState(chart);
+    prevComboRef.current = 0;
     setHitFx({}); setParticles([]); setComboFlash(null); setDisplayScore(0);
     setPaused(false);
     setPhase("countdown");
@@ -78,6 +95,8 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
       if (phase === "playing" && !pausedRef.current) {
         const result = judgePress(stateRef.current, lane, cfg);
         if (result) {
+          playSfx(result.kind === "perfect" ? "hit-perfect" : "hit-good");
+          checkComboThreshold(stateRef.current.combo);
           setHitFx((prev) => ({
             ...prev,
             [lane]: { kind: result.kind, ts: performance.now(), text: result.text },
@@ -100,15 +119,25 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
               ts: performance.now(),
             });
           }
+        } else {
+          // Wrong-time press (no note in window) → miss SFX
+          playSfx("miss");
         }
       }
     } else {
       setLanePressed((p) => ({ ...p, [lane]: false }));
       if (phase === "playing" && !pausedRef.current) {
+        const beforeCombo = stateRef.current.combo;
         judgeRelease(stateRef.current, lane, cfg, setHitFx);
+        const afterCombo = stateRef.current.combo;
+        if (afterCombo === 0 && beforeCombo > 0) {
+          playSfx("miss");
+        } else if (afterCombo > beforeCombo) {
+          checkComboThreshold(afterCombo);
+        }
       }
     }
-  }, [phase, cfg]);
+  }, [phase, cfg, checkComboThreshold]);
 
   useEffect(() => subscribeInput(handleInput), [handleInput]);
 
@@ -195,6 +224,9 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
         s.currentMs = (nowCtx - audioStartCtxTime - pauseAccumSec) * 1000 - latencyMs;
       }
 
+      const comboBefore = s.combo;
+      let autoMissed = false;
+
       // Handle active holds — auto-complete when tail reaches hit line
       for (let i = 0; i < 4; i++) {
         const heldNote = s.held[i];
@@ -220,6 +252,7 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
           s.stats.miss += 1;
           s.stats.judgedForAcc += 1;
           s.combo = 0;
+          autoMissed = true;
         }
       }
       // Auto-miss hold note HEADS that weren't pressed in time
@@ -232,8 +265,13 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
           s.stats.miss += 1;
           s.stats.judgedForAcc += 1;
           s.combo = 0;
+          autoMissed = true;
         }
       }
+
+      if (autoMissed) playSfx("miss");
+      if (s.combo > comboBefore) checkComboThreshold(s.combo);
+      else if (s.combo === 0 && comboBefore > 0) prevComboRef.current = 0;
 
       // Smooth score counter
       setDisplayScore((prev) => {
@@ -269,7 +307,7 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
       cancelAnimationFrame(rafId);
       if (capturedAudio) capturedAudio.pause();
     };
-  }, [phase, onFinish, renderTick, cfg, song.id, difficulty]);
+  }, [phase, onFinish, renderTick, cfg, song.id, difficulty, checkComboThreshold]);
 
   // Cleanup audio on unmount
   useEffect(() => {
