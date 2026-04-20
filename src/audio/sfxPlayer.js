@@ -107,4 +107,5 @@ export function isSfxReady() {
   return ready;
 }
 
-export default { initSfx, playSfx, setSfxVolume, isSfxReady };
+const sfxPlayer = { initSfx, playSfx, setSfxVolume, isSfxReady };
+export default sfxPlayer;
