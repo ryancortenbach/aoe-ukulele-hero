@@ -66,9 +66,3 @@ export function recordScore(songId, difficulty, stats) {
   return { isNew: false, prev };
 }
 
-export function getAllScoresForSong(songId) {
-  const all = readAll();
-  return Object.entries(all)
-    .filter(([k]) => k.startsWith(`${songId}:`))
-    .map(([k, v]) => ({ difficulty: k.split(":")[1], ...v }));
-}

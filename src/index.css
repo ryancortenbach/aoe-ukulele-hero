@@ -33,11 +33,6 @@ button:focus-visible,
 }
 
 /* Global keyframes used across components */
-@keyframes uh-ripple-fade {
-  from { opacity: 1; transform: scale(0.8); }
-  to   { opacity: 0; transform: scale(1.4); }
-}
-
 @keyframes uh-pop-in {
   0%   { opacity: 0; transform: translate(-50%, 0) scale(0.6); }
   30%  { opacity: 1; transform: translate(-50%, -10px) scale(1.15); }

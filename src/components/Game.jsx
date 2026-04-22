@@ -30,7 +30,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { LANES, COLORS, FONT_STACK, DIFFICULTIES, SCORE, HIGHWAY, AUDIO_LATENCY_MS } from "../theme";
+import { LANES, COLORS, FONT_STACK, DIFFICULTIES, SCORE, HIGHWAY, AUDIO_LATENCY_MS_BUFFER, AUDIO_LATENCY_MS_ELEMENT } from "../theme";
 import { subscribe as subscribeInput, emit as emitInput } from "../input/inputManager";
 import { generateChart } from "../audio/autoChart";
 import { getCtx, getOutputLatencySec } from "../audio/audioEngine";
@@ -45,7 +45,14 @@ const LEAD_IN_MS = 2200;
 export default function Game({ song, difficulty = "medium", onFinish, onExit }) {
   const cfg = DIFFICULTIES[difficulty] || DIFFICULTIES.medium;
 
-  // Generate the chart once per (song, difficulty) combo.
+  // TODO(future-wave): `song.id` for uploads is generated as
+  // `upload-${Date.now()}-${random}` in audioEngine.js (`songFromFile`),
+  // which means re-uploading the same file produces a different id every
+  // time and orphans any prior high scores in highScores.js. This also
+  // defeats per-song leaderboards across sessions. Fix by deriving a
+  // stable id from a hash of the decoded audio (e.g. file size + name +
+  // first-N-sample fingerprint) in audioEngine.songFromFile. Cannot be
+  // touched this wave — audioEngine.js is out of scope.
   const chart = useMemo(
     () => generateChart({
       bpm: song.bpm,
@@ -283,12 +290,15 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
     // Latency between "audio sample requested at ctx time T" and "sample
     // audible at the speakers". For the BufferSource path, outputLatency +
     // baseLatency describe the context's output graph — exactly what the
-    // player hears — so we add them in. AUDIO_LATENCY_MS remains as an
-    // empirical pad for element-level buffering / device jitter on top.
-    // For the <audio> fallback path the <audio> element bypasses the
-    // AudioContext, so only AUDIO_LATENCY_MS applies.
+    // player hears — so we add them in, and only need a small input-side pad
+    // (AUDIO_LATENCY_MS_BUFFER ≈ 20ms for keyboard/USB jitter).
+    // For the <audio> fallback path the element bypasses the AudioContext,
+    // so outputLatency isn't applicable; AUDIO_LATENCY_MS_ELEMENT (≈60ms)
+    // empirically covers the element's internal buffering + device latency.
     const extraLatencySec = useBufferSource ? getOutputLatencySec() : 0;
-    const latencyMs = AUDIO_LATENCY_MS + extraLatencySec * 1000;
+    const latencyMs =
+      (useBufferSource ? AUDIO_LATENCY_MS_BUFFER : AUDIO_LATENCY_MS_ELEMENT) +
+      extraLatencySec * 1000;
 
     const tick = () => {
       const nowCtx = ctx.currentTime;
@@ -427,7 +437,28 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
       if ((allJudged && s.currentMs > lastNoteTime + 600) || audioEnded) {
         setPhase("done");
         stopPlayback();
-        const final = finalStats(s, cfg);
+        // End-of-song miss sweep: audio can end before every chart note
+        // has been judged (e.g. short clip that cuts off mid-chart). Any
+        // remaining un-judged notes count as misses so the invariant
+        // `perfect + good + miss === chart.length` holds before scoring.
+        // This mirrors the in-loop auto-miss behavior (any note past its
+        // hit window is a miss) but applies unconditionally at end-of-song
+        // for notes past `currentMs`, and also to notes still inside the
+        // hit window that the player never attempted.
+        for (const n of s.notes) {
+          if (n.judged) continue;
+          // If this note's head is still being held as an active hold,
+          // clear the held slot too so we don't leak a dangling reference.
+          if (n.kind === "hold" && s.held[n.lane] === n) {
+            s.held[n.lane] = null;
+          }
+          n.judged = true;
+          n.result = "miss";
+          s.stats.miss += 1;
+          s.stats.judgedForAcc += 1;
+          s.combo = 0;
+        }
+        const final = finalStats(s);
         const totalJudged = final.perfect + final.good + final.miss;
         const accuracy = totalJudged ? (final.perfect + final.good) / totalJudged : 0;
         const grade = gradeLetter(accuracy, final.miss);
@@ -525,7 +556,10 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
       )}
 
       {phase === "countdown" && (
-        <Countdown onDone={() => setPhase("playing")} />
+        <Countdown
+          onDone={() => setPhase("playing")}
+          onCancel={onExit}
+        />
       )}
 
       {paused && phase === "playing" && (
@@ -936,7 +970,18 @@ function judgePress(s, lane, cfg) {
 
 function judgeRelease(s, lane, cfg, setHitFx) {
   const n = s.held[lane];
+  // If there's no active hold on this lane, nothing to release. This also
+  // covers the case where the game-loop auto-complete (see ~line 367)
+  // already judged this hold when the tail reached the hit line and
+  // cleared `s.held[lane]` — a subsequent release must be a no-op, not a
+  // second score event.
   if (!n) return;
+  // Defensive belt-and-suspenders: if the note was somehow judged already
+  // but the held slot wasn't cleared, bail without re-scoring.
+  if (n.judged) {
+    s.held[lane] = null;
+    return;
+  }
   const expectedEnd = n.time + n.duration;
   const earlyBy = expectedEnd - s.currentMs;
   if (earlyBy > cfg.good) {

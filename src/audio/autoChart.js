@@ -80,13 +80,14 @@ export function generateChart({
       });
       lastHoldEnd = t + duration;
       // Skip ahead so we don't overlap the next note with this hold's tail.
-      // TODO: beatIdx is stepping per `step` (e.g. eighth-notes on Hard,
-      // half-notes on Easy), not per whole beat, so `beatIdx += holdBeats`
-      // under-advances the lane pattern on Hard and over-advances on Easy.
-      // Timing is unaffected (this only changes which lane the next note
-      // lands in), but holds can land on visually awkward lane sequences.
-      // The timing-correct advance is `holdBeats * cfg.subdivision`.
-      beatIdx += holdBeats;
+      // `beatIdx` steps per `step` (eighth-notes on Hard, quarters on Medium,
+      // half-notes on Easy), not per whole beat. A hold spans `holdBeats`
+      // whole beats of real time, which is `holdBeats * cfg.subdivision`
+      // steps — that's the value to advance the lane pattern by. (Easy
+      // subdivision=0.5 + 2-beat hold → 1 step; Hard subdivision=2 + 2-beat
+      // hold → 4 steps.) Min 1 so we always advance past the current lane.
+      const stepsSkipped = Math.max(1, Math.round(holdBeats * cfg.subdivision));
+      beatIdx += stepsSkipped;
       t += duration - step; // compensate for the for-loop's +=step
       continue;
     }

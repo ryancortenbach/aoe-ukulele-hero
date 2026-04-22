@@ -58,12 +58,28 @@ export const TIMING = {
   good: 100,
 };
 
-// Extra calibration added on top of the AudioContext-reported
-// baseLatency + outputLatency. Real-world HTMLAudioElement playback
-// carries additional element-level buffering that the Web Audio API
-// doesn't report. ~60 ms empirically lines up the visual hit line with
-// what the player hears on typical desktop browsers. Tune if needed.
-export const AUDIO_LATENCY_MS = 60;
+// Extra calibration added on top of whatever latency the playback path
+// already reports. After Wave 2 the game has two playback paths with very
+// different reported-latency budgets, so we expose a constant per path:
+//
+//   AUDIO_LATENCY_MS_BUFFER  — used on the AudioBufferSourceNode path.
+//     The AudioContext already reports ctx.outputLatency + ctx.baseLatency
+//     (typically 10–80 ms on macOS Core Audio), so this constant only
+//     needs to cover what the context CAN'T see: input-side latency like
+//     keyboard → JS event dispatch, USB polling, Web Serial framing, etc.
+//     ~20 ms is a small empirical pad for that.
+//
+//   AUDIO_LATENCY_MS_ELEMENT — used on the <audio>/HTMLAudioElement
+//     fallback path (songs whose buffer wasn't decodable, e.g. CORS-blocked
+//     remote URLs). That element bypasses the AudioContext entirely, so
+//     ctx.outputLatency/baseLatency is NOT added on top. This constant
+//     has to cover BOTH output-side element buffering AND the same
+//     input-side slop, hence ~60 ms (the pre-Wave-2 value).
+//
+// Both are kept — don't "consolidate" them without also fixing the
+// playback-path branch in Game.jsx. Input-side latency is real.
+export const AUDIO_LATENCY_MS_BUFFER = 20;
+export const AUDIO_LATENCY_MS_ELEMENT = 60;
 
 // Difficulty presets: note density, timing windows, and chart variety.
 export const DIFFICULTIES = {
