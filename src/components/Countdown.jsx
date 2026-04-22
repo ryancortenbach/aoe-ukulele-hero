@@ -1,20 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FONT_STACK } from "../theme";
 import { playSfx } from "../audio/sfxPlayer";
 
 export default function Countdown({ onDone }) {
   const [n, setN] = useState(3);
 
+  // Keep a stable ref to onDone so parent re-renders (e.g. from unrelated
+  // state like lane-press visuals) don't reset the countdown timer.
+  const onDoneRef = useRef(onDone);
+  useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
+
   useEffect(() => {
     if (n === 0) {
       playSfx('countdown-go');
-      const id = setTimeout(onDone, 400);
+      const id = setTimeout(() => onDoneRef.current?.(), 400);
       return () => clearTimeout(id);
     }
     playSfx('countdown-tick');
     const id = setTimeout(() => setN((x) => x - 1), 800);
     return () => clearTimeout(id);
-  }, [n, onDone]);
+  }, [n]);
 
   return (
     <div style={styles.root} aria-live="assertive" aria-atomic="true">

@@ -2,8 +2,15 @@ import { FONT_STACK, COLORS } from "../theme";
 
 export default function Results({ song, stats, onReplay, onMenu }) {
   const { score, maxCombo, perfect, good, miss, total } = stats;
-  const accuracy = total ? ((perfect + good) / total) : 0;
-  const grade = gradeFor(accuracy, miss);
+  // Prefer the accuracy + grade that Game.jsx already computed (and wrote
+  // to the high-score record). Falling back to a local recompute keeps
+  // the component usable in isolation (e.g. tests).
+  const accuracy = typeof stats.accuracy === "number"
+    ? stats.accuracy
+    : (total ? ((perfect + good) / total) : 0);
+  const grade = stats.grade
+    ? { letter: stats.grade, color: gradeColor(stats.grade) }
+    : gradeFor(accuracy, miss);
 
   return (
     <div style={styles.root}>
@@ -50,13 +57,26 @@ function Stat({ label, value, color }) {
   );
 }
 
+const GRADE_COLORS = {
+  S: "#f682f4",
+  A: "#54e4e9",
+  B: "#ffd95a",
+  C: "#4d9eff",
+  D: "#ff944d",
+  F: "#ff4d6d",
+};
+
+function gradeColor(letter) {
+  return GRADE_COLORS[letter] || "#ff4d6d";
+}
+
 function gradeFor(accuracy, miss) {
-  if (accuracy >= 0.98 && miss === 0) return { letter: "S", color: "#f682f4" };
-  if (accuracy >= 0.92) return { letter: "A", color: "#54e4e9" };
-  if (accuracy >= 0.8) return { letter: "B", color: "#ffd95a" };
-  if (accuracy >= 0.65) return { letter: "C", color: "#4d9eff" };
-  if (accuracy >= 0.5) return { letter: "D", color: "#ff944d" };
-  return { letter: "F", color: "#ff4d6d" };
+  if (accuracy >= 0.98 && miss === 0) return { letter: "S", color: GRADE_COLORS.S };
+  if (accuracy >= 0.92) return { letter: "A", color: GRADE_COLORS.A };
+  if (accuracy >= 0.8) return { letter: "B", color: GRADE_COLORS.B };
+  if (accuracy >= 0.65) return { letter: "C", color: GRADE_COLORS.C };
+  if (accuracy >= 0.5) return { letter: "D", color: GRADE_COLORS.D };
+  return { letter: "F", color: GRADE_COLORS.F };
 }
 
 const styles = {

@@ -10,7 +10,7 @@
 // Requires a Chromium-based browser (Chrome/Edge/Brave). Must be called
 // from a user gesture (click).
 
-import { emit, registerSource, updateSourceStatus } from "./inputManager";
+import { emit, registerSource, updateSourceStatus, unregisterSource } from "./inputManager";
 
 const SOURCE_ID = "serial";
 const BAUD = 9600;
@@ -39,7 +39,16 @@ export async function connectSerial() {
     id: SOURCE_ID,
     label: "Arduino (Web Serial)",
     status: "connecting",
-    stop: () => disconnectSerial(),
+    // NOTE: stop must NOT call disconnectSerial — that creates an infinite
+    // recursion since disconnectSerial → unregisterSource → source.stop()
+    // → disconnectSerial. Stop only the read loop; disconnectSerial owns
+    // the rest of the teardown.
+    stop: () => {
+      if (active) {
+        try { active.stop(); } catch (e) { /* ignore */ }
+        active = null;
+      }
+    },
   });
   updateSourceStatus(SOURCE_ID, "connected");
 
@@ -81,6 +90,10 @@ export function disconnectSerial() {
     active.stop();
     active = null;
   }
+  // Remove the source from the registry so the UI's "Connect Arduino"
+  // button comes back after a disconnect (otherwise `serial` stays truthy
+  // in ControllerStatus and the reconnect button is hidden forever).
+  unregisterSource(SOURCE_ID);
 }
 
 function handleMessage(line) {

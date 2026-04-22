@@ -1,28 +1,39 @@
 // ---------------------------------------------------------------------------
-// Beat-sync diagnosis (Wave 1B fix)
+// Beat-sync diagnosis (Waves 1B + 2B)
 // ---------------------------------------------------------------------------
-// The old loop mixed two clocks: `performance.now()` for the lead-in countdown
-// and HTMLAudioElement `currentTime` after playback started. Those clocks
-// drift against each other, and — more importantly — `audio.currentTime`
-// reports the BUFFER playhead, which is ahead of what the player actually
-// HEARS by the device's audio output latency (typically 30–150 ms on
-// desktop). Because notes scroll based on the buffer-playhead clock, they
-// reach the hit line BEFORE the corresponding beat is audible, so every
-// press feels late. Additionally, the initial `audio.play()` call has
-// non-deterministic start latency, causing a variable offset on top of the
-// fixed device latency. Fix: drive everything from a single monotonic
-// AudioContext clock, schedule `audio.play()` at a known context time, and
-// subtract (baseLatency + outputLatency + AUDIO_LATENCY_MS calibration)
-// from the song clock so the visible hit line matches the audible beat.
-// Per-song `offsetMs` (from songLibrary / beat detection) is applied in
-// the chart, and can be further tuned by setting `song.offsetMs`.
+// The original loop mixed `performance.now()` with HTMLAudioElement
+// `currentTime`, which drifted and put visuals ahead of audio. Wave 1B
+// unified on the AudioContext clock. This pass (2B) fixes what was still
+// wrong:
+//
+//  1) The song clock had a DISCONTINUITY at the lead-in / play transition.
+//     Lead-in used  currentMs = -(LEAD_IN_MS - elapsed)          (no latency)
+//     After play:   currentMs = (nowCtx - audioStartCtxTime)*1000 - latencyMs
+//     which jumped backwards by `latencyMs` the instant audio.play() fired.
+//     Now the SAME formula drives the clock end-to-end — lead-in is simply
+//     the interval when currentMs < 0.
+//
+//  2) Wave 1B added `ctx.baseLatency + ctx.outputLatency` as part of the
+//     latency compensation. Those numbers characterise the AudioContext's
+//     output path — but music plays through an <audio> element that
+//     BYPASSES the context, so they don't apply to what the player hears.
+//     Applying them double-compensated and pushed visuals behind audio.
+//     We now rely on a single AUDIO_LATENCY_MS calibration for <audio>.
+//
+//  3) `audio.play()` has non-deterministic start latency. We were anchoring
+//     `audioStartCtxTime` to when play() was *called*, not when audio
+//     actually began. On play() resolve we now re-anchor the clock using
+//     `audio.currentTime`, which snaps visuals back onto the real playhead.
+//
+// Per-song `offsetMs` (from songLibrary / beat detection) is applied inside
+// the chart generator, and can be further tuned by setting `song.offsetMs`.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { LANES, COLORS, FONT_STACK, DIFFICULTIES, SCORE, HIGHWAY, AUDIO_LATENCY_MS } from "../theme";
 import { subscribe as subscribeInput, emit as emitInput } from "../input/inputManager";
 import { generateChart } from "../audio/autoChart";
-import { getCtx, getOutputLatencySec } from "../audio/audioEngine";
+import { getCtx } from "../audio/audioEngine";
 import { recordScore } from "../highScores";
 import { initSfx, playSfx } from "../audio/sfxPlayer";
 import Hud, { multiplierFor } from "./Hud";
@@ -184,15 +195,20 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
     // directly comparable to the scheduled audio playback time.
     const ctx = getCtx();
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
-    const ctxStart = ctx.currentTime;             // seconds
-    const audioStartCtxTime = ctxStart + LEAD_IN_MS / 1000;
+    const ctxStart = ctx.currentTime;                   // seconds
+    // audioStartCtxTime is the ctx.currentTime at which SONG POSITION 0
+    // will be AUDIBLE. It starts as an estimate (lead-in end) and gets
+    // re-anchored on audio.play() resolve using audio.currentTime.
+    let audioStartCtxTime = ctxStart + LEAD_IN_MS / 1000;
     let pauseAccumSec = 0;
     let pauseStartedCtxTime = null;
     let audioStarted = false;
-    // Total latency between "audio sample scheduled for ctx time T" and
-    // "sample audible at the speakers". Advance the song clock by this
-    // amount so the visible hit line matches what the player hears.
-    const latencyMs = getOutputLatencySec() * 1000 + AUDIO_LATENCY_MS;
+    // Latency between "audio sample requested at ctx time T" and "sample
+    // audible at the speakers" for the HTMLAudioElement. The <audio> tag
+    // bypasses the AudioContext entirely, so ctx.baseLatency /
+    // ctx.outputLatency (used in Wave 1B) don't apply — they describe the
+    // context's Web Audio graph. Rely on an empirical calibration constant.
+    const latencyMs = AUDIO_LATENCY_MS;
 
     const tick = () => {
       const nowCtx = ctx.currentTime;
@@ -208,20 +224,49 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
       }
 
       const s = stateRef.current;
-      const elapsedMs = (nowCtx - ctxStart - pauseAccumSec) * 1000;
 
-      if (elapsedMs < LEAD_IN_MS) {
-        s.currentMs = -(LEAD_IN_MS - elapsedMs);
-      } else {
-        if (!audioStarted && audioRef.current) {
-          audioRef.current.currentTime = 0;
-          const pr = audioRef.current.play();
-          if (pr && pr.catch) pr.catch((e) => console.error("audio play failed", e));
-          audioStarted = true;
+      // Unified song clock: represents "song position currently audible at
+      // the speakers". Negative during lead-in, 0 when the first audio
+      // sample is audible, positive while music plays. A single formula
+      // end-to-end avoids the discontinuity that used to jump the clock
+      // backwards by latencyMs at the lead-in / play transition.
+      s.currentMs =
+        (nowCtx - audioStartCtxTime - pauseAccumSec) * 1000 - latencyMs;
+
+      // Kick off <audio> playback exactly once, at the scheduled song-start
+      // moment. On resolve, re-anchor the clock against audio.currentTime
+      // so the non-deterministic play() start latency doesn't leave the
+      // chart stranded ahead of (or behind) the actual music.
+      if (!audioStarted && audioRef.current && nowCtx >= audioStartCtxTime) {
+        audioStarted = true;
+        try { audioRef.current.currentTime = 0; } catch (_) {}
+        const pr = audioRef.current.play();
+        if (pr && pr.then) {
+          pr.then(() => {
+            // Re-anchor audioStartCtxTime so the song clock matches the
+            // actual playhead. Derivation: we want
+            //   s.currentMs === ac.currentTime*1000 - latencyMs
+            // at this instant, given
+            //   s.currentMs = (nowCtx - audioStartCtxTime - pauseAccumSec)*1000 - latencyMs.
+            // Solving:
+            //   audioStartCtxTime = nowCtx - ac.currentTime - pauseAccumSec
+            // This corrects both the non-deterministic play() start
+            // latency and any slop in the scheduling math. Guard against
+            // the rare case where currentTime is still exactly 0 (the
+            // element hasn't fed a sample yet) — in that case our
+            // original estimate is the best we have.
+            const ac = audioRef.current;
+            if (ac && ac.currentTime > 0) {
+              audioStartCtxTime =
+                ctx.currentTime - ac.currentTime - pauseAccumSec;
+            }
+          }).catch((e) => {
+            // Allow retry next tick if autoplay was rejected (rare: the
+            // user already gestured to start the game).
+            audioStarted = false;
+            console.error("audio play failed", e);
+          });
         }
-        // Song clock = (ctx elapsed since scheduled audio start)
-        //              minus output latency (so visuals match what's heard).
-        s.currentMs = (nowCtx - audioStartCtxTime - pauseAccumSec) * 1000 - latencyMs;
       }
 
       const comboBefore = s.combo;
