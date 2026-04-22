@@ -1,41 +1,44 @@
-// Keyboard input source. Maps A/S/D/F to lanes 0/1/2/3.
-// Guards against auto-repeat.
-
-import { LANES } from "../theme";
+// src/input/keyboardSource.js
 import { emit, registerSource } from "./inputManager";
 
-let started = false;
+const SOURCE_ID = "keyboard";
 
-export function startKeyboardSource() {
-  if (started) return;
-  started = true;
+const KEY_MAP = {
+  a: 0,
+  s: 1,
+  d: 2,
+  f: 3,
+};
 
-  const keyMap = {};
-  LANES.forEach((l) => { keyMap[l.key] = l.id; });
-
-  const down = (e) => {
+export function startKeyboard() {
+  const onKeyDown = (e) => {
     if (e.repeat) return;
-    const lane = keyMap[e.key.toLowerCase()];
+    const lane = KEY_MAP[e.key.toLowerCase()];
     if (lane === undefined) return;
     emit(lane, "press");
   };
-  const up = (e) => {
-    const lane = keyMap[e.key.toLowerCase()];
+
+  const onKeyUp = (e) => {
+    const lane = KEY_MAP[e.key.toLowerCase()];
     if (lane === undefined) return;
     emit(lane, "release");
   };
 
-  window.addEventListener("keydown", down);
-  window.addEventListener("keyup", up);
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
 
   registerSource({
-    id: "keyboard",
-    label: "Keyboard (A S D F)",
+    id: SOURCE_ID,
+    label: "Keyboard (A/S/D/F)",
     status: "connected",
-    stop() {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-      started = false;
+    stop: () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
     },
   });
+
+  return () => {
+    window.removeEventListener("keydown", onKeyDown);
+    window.removeEventListener("keyup", onKeyUp);
+  };
 }

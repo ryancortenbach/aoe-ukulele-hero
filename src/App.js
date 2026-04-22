@@ -3,7 +3,7 @@ import Menu from "./components/Menu";
 import Game from "./components/Game";
 import Results from "./components/Results";
 import ControllerStatus from "./components/ControllerStatus";
-import { startKeyboardSource } from "./input/keyboardSource";
+import { startKeyboard } from "./input/keyboardSource";
 
 // Top-level state machine: menu → game → results → menu.
 export default function App() {
@@ -12,7 +12,10 @@ export default function App() {
   const [difficulty, setDifficulty] = useState("medium");
   const [stats, setStats] = useState(null);
 
-  useEffect(() => { startKeyboardSource(); }, []);
+useEffect(() => {
+  const stop = startKeyboard();
+  return stop;
+}, []);
 
   return (
     <>
