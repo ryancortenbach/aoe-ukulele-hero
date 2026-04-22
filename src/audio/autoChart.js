@@ -35,9 +35,20 @@ export function generateChart({
   const step = msPerBeat / cfg.subdivision;
   const pattern = PATTERNS[difficulty] || PATTERNS.medium;
 
-  // Make sure the first note isn't immediately at song start. Align to
-  // whichever is later: detected first beat, or 800 ms in.
-  const firstT = Math.max(offsetMs, 800);
+  // Make sure the first note isn't immediately at song start, but KEEP it
+  // on the beat grid anchored at `offsetMs`. Previously this was
+  // `Math.max(offsetMs, 800)`, which would silently shift the first note
+  // off-beat when offsetMs < 800 (e.g. offsetMs=200, bpm=120 → firstT=800,
+  // which is 100ms past a true beat at 700). We now step forward in whole
+  // `step` increments from offsetMs until we clear the 800 ms minimum —
+  // that way every note stays on the grid and the chart actually feels
+  // synced to the music.
+  const MIN_FIRST_NOTE_MS = 800;
+  let firstT = offsetMs;
+  if (firstT < MIN_FIRST_NOTE_MS && step > 0) {
+    const stepsToSkip = Math.ceil((MIN_FIRST_NOTE_MS - firstT) / step);
+    firstT = offsetMs + stepsToSkip * step;
+  }
   const lastT = Math.max(firstT, durationMs - padEndMs);
 
   const rng = mulberry32(Math.round(bpm * 1000 + durationMs));
@@ -69,6 +80,12 @@ export function generateChart({
       });
       lastHoldEnd = t + duration;
       // Skip ahead so we don't overlap the next note with this hold's tail.
+      // TODO: beatIdx is stepping per `step` (e.g. eighth-notes on Hard,
+      // half-notes on Easy), not per whole beat, so `beatIdx += holdBeats`
+      // under-advances the lane pattern on Hard and over-advances on Easy.
+      // Timing is unaffected (this only changes which lane the next note
+      // lands in), but holds can land on visually awkward lane sequences.
+      // The timing-correct advance is `holdBeats * cfg.subdivision`.
       beatIdx += holdBeats;
       t += duration - step; // compensate for the for-loop's +=step
       continue;

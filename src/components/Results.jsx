@@ -4,10 +4,14 @@ export default function Results({ song, stats, onReplay, onMenu }) {
   const { score, maxCombo, perfect, good, miss, total } = stats;
   // Prefer the accuracy + grade that Game.jsx already computed (and wrote
   // to the high-score record). Falling back to a local recompute keeps
-  // the component usable in isolation (e.g. tests).
+  // the component usable in isolation (e.g. tests). The fallback uses the
+  // same denominator as Game.jsx — total judged notes (perfect + good + miss),
+  // NOT chart length — so a run that ends early doesn't get penalized as if
+  // the un-judged notes were misses.
+  const judgedTotal = perfect + good + miss;
   const accuracy = typeof stats.accuracy === "number"
     ? stats.accuracy
-    : (total ? ((perfect + good) / total) : 0);
+    : (judgedTotal ? ((perfect + good) / judgedTotal) : 0);
   const grade = stats.grade
     ? { letter: stats.grade, color: gradeColor(stats.grade) }
     : gradeFor(accuracy, miss);

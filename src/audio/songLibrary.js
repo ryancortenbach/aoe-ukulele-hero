@@ -10,6 +10,16 @@ import { songFromUrl, songFromFile } from "./audioEngine";
 // Known-good iTunes 30-second preview URLs. All publicly hosted by Apple,
 // CORS-enabled, served over HTTPS. Approximate BPMs are supplied so we
 // skip tempo detection for these (faster load + more reliable).
+//
+// NOTE: offsetMs is intentionally omitted here — audioEngine.songFromUrl
+// always runs web-audio-beat-detector's guess() to get a per-song first-beat
+// offset, even when BPM is known. If a specific preview feels consistently
+// off on a downbeat, add a `offsetMs: <ms>` override on that entry below
+// and it will flow into generateChart via Game.jsx. (BPMs below were
+// verified against published tempi — MONTERO 178, Shape of You 96,
+// Blinding Lights 171, bad guy 135, Flowers 118, Levitating 103, Anti-Hero
+// 97, Watermelon Sugar 95, Espresso 104, Uptown Funk 115. None look
+// halved/doubled.)
 const DEFAULT_SOURCES = [
   {
     id: "montero",
