@@ -2,12 +2,16 @@
 // Guards against auto-repeat.
 
 import { LANES } from "../theme";
-import { emit, registerSource } from "./inputManager";
+import { emit, registerSource, unregisterSource } from "./inputManager";
 
 let started = false;
+// Current teardown function, set on start, cleared on stop. Subsequent
+// calls to startKeyboardSource() while already started are no-ops but
+// still return the same teardown so callers don't need to care.
+let currentStop = () => {};
 
 export function startKeyboardSource() {
-  if (started) return;
+  if (started) return currentStop;
   started = true;
 
   const keyMap = {};
@@ -28,14 +32,25 @@ export function startKeyboardSource() {
   window.addEventListener("keydown", down);
   window.addEventListener("keyup", up);
 
+  const stopListeners = () => {
+    window.removeEventListener("keydown", down);
+    window.removeEventListener("keyup", up);
+    started = false;
+    currentStop = () => {};
+  };
+
   registerSource({
     id: "keyboard",
     label: "Keyboard (A S D F)",
     status: "connected",
-    stop() {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-      started = false;
-    },
+    stop: stopListeners,
   });
+
+  // Returned teardown unregisters the source too (which also invokes
+  // stopListeners via inputManager.unregisterSource).
+  currentStop = () => {
+    if (!started) return;
+    unregisterSource("keyboard");
+  };
+  return currentStop;
 }

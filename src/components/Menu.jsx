@@ -12,6 +12,15 @@ export default function Menu({ onStart }) {
   const [uploadErr, setUploadErr] = useState(null);
   const fileRef = useRef(null);
 
+  // Track mount state so async handlers don't setState after unmount.
+  // React 19 silently ignores this, but the flag keeps intent clear and
+  // avoids noisy warnings if React reintroduces them.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   // Auto-select first song once library has something
   useEffect(() => {
     if (!selectedId && songs.length) setSelectedId(songs[0].id);
@@ -35,11 +44,13 @@ export default function Menu({ onStart }) {
     setUploading(true);
     try {
       const added = await addUploadedFile(file);
+      if (!mountedRef.current) return;
       setSelectedId(added.id);
     } catch (err) {
+      if (!mountedRef.current) return;
       setUploadErr(err.message || String(err));
     } finally {
-      setUploading(false);
+      if (mountedRef.current) setUploading(false);
     }
   };
 

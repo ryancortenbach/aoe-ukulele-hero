@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { subscribeSources } from "../input/inputManager";
 import { connectSerial, isSerialSupported, disconnectSerial } from "../input/serialSource";
 import { connectWebsocket, disconnectWebsocket } from "../input/websocketSource";
@@ -10,8 +10,50 @@ export default function ControllerStatus() {
   const [sources, setSources] = useState([]);
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState(null);
+  const rootRef = useRef(null);
+  const panelRef = useRef(null);
+  const toggleBtnRef = useRef(null);
 
   useEffect(() => subscribeSources(setSources), []);
+
+  // Click-outside + Escape dismissal while the dropdown is open. Uses
+  // a capturing mousedown listener so we catch the event before any
+  // inner button handlers run.
+  useEffect(() => {
+    if (!open) return;
+    const onMouseDown = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  // Focus management: on open, move focus into the first focusable
+  // element inside the panel. On close, return focus to the toggle
+  // button so keyboard users are not dropped back at <body>.
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      const first = panelRef.current?.querySelector(
+        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      first?.focus();
+    } else if (!open && wasOpenRef.current) {
+      toggleBtnRef.current?.focus();
+    }
+    wasOpenRef.current = open;
+  }, [open]);
 
   const serial = sources.find((s) => s.id === "serial");
   const ws = sources.find((s) => s.id === "websocket");
@@ -27,8 +69,9 @@ export default function ControllerStatus() {
   };
 
   return (
-    <div style={styles.root}>
+    <div style={styles.root} ref={rootRef}>
       <button
+        ref={toggleBtnRef}
         style={{
           ...styles.pill,
           borderColor: serial || ws ? "#54e4e9" : "#ffffff33",
@@ -43,7 +86,7 @@ export default function ControllerStatus() {
       </button>
 
       {open && (
-        <div style={styles.panel}>
+        <div style={styles.panel} ref={panelRef}>
           <div style={styles.panelTitle}>INPUT SOURCES</div>
 
           <SourceRow label="Keyboard" status={keyboard?.status || "off"} />

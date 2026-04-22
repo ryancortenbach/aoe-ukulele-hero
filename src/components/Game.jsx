@@ -1,29 +1,29 @@
 // ---------------------------------------------------------------------------
-// Beat-sync diagnosis (Waves 1B + 2B)
+// Beat-sync diagnosis (Waves 1B + 2B + 3B)
 // ---------------------------------------------------------------------------
 // The original loop mixed `performance.now()` with HTMLAudioElement
 // `currentTime`, which drifted and put visuals ahead of audio. Wave 1B
-// unified on the AudioContext clock. This pass (2B) fixes what was still
-// wrong:
+// unified on the AudioContext clock. Waves 2B/3B fix what remained:
 //
 //  1) The song clock had a DISCONTINUITY at the lead-in / play transition.
-//     Lead-in used  currentMs = -(LEAD_IN_MS - elapsed)          (no latency)
-//     After play:   currentMs = (nowCtx - audioStartCtxTime)*1000 - latencyMs
-//     which jumped backwards by `latencyMs` the instant audio.play() fired.
-//     Now the SAME formula drives the clock end-to-end — lead-in is simply
-//     the interval when currentMs < 0.
+//     One unified formula drives the clock end-to-end; lead-in is just the
+//     interval when currentMs < 0.
 //
-//  2) Wave 1B added `ctx.baseLatency + ctx.outputLatency` as part of the
-//     latency compensation. Those numbers characterise the AudioContext's
-//     output path — but music plays through an <audio> element that
-//     BYPASSES the context, so they don't apply to what the player hears.
-//     Applying them double-compensated and pushed visuals behind audio.
-//     We now rely on a single AUDIO_LATENCY_MS calibration for <audio>.
+//  2) Song playback now routes through the AudioContext via an
+//     AudioBufferSourceNode (was: HTMLAudioElement). This makes
+//     ctx.outputLatency + ctx.baseLatency meaningful — they describe the
+//     actual latency of the graph the player hears — so we re-include them
+//     in the compensation. It also gives us a DETERMINISTIC start moment:
+//     `source.start(when)` schedules playback at `when`, and `when ===
+//     ctx.currentTime` at call time means the clock anchor is exact. No
+//     more `audio.play().then()` re-anchor dance, which means pause/resume
+//     also stops drifting (each resume creates a fresh source with an
+//     exact start moment).
 //
-//  3) `audio.play()` has non-deterministic start latency. We were anchoring
-//     `audioStartCtxTime` to when play() was *called*, not when audio
-//     actually began. On play() resolve we now re-anchor the clock using
-//     `audio.currentTime`, which snaps visuals back onto the real playhead.
+//  3) iTunes previews require CORS (they have it). For any host that blocks
+//     CORS, audioEngine.songFromUrl falls back to a descriptor with
+//     `audioBuffer === null`, and we transparently play that song via the
+//     legacy <audio> element path (with looser sync) so the game still runs.
 //
 // Per-song `offsetMs` (from songLibrary / beat detection) is applied inside
 // the chart generator, and can be further tuned by setting `song.offsetMs`.
@@ -33,7 +33,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { LANES, COLORS, FONT_STACK, DIFFICULTIES, SCORE, HIGHWAY, AUDIO_LATENCY_MS } from "../theme";
 import { subscribe as subscribeInput, emit as emitInput } from "../input/inputManager";
 import { generateChart } from "../audio/autoChart";
-import { getCtx } from "../audio/audioEngine";
+import { getCtx, getOutputLatencySec } from "../audio/audioEngine";
 import { recordScore } from "../highScores";
 import { initSfx, playSfx } from "../audio/sfxPlayer";
 import Hud, { multiplierFor } from "./Hud";
@@ -71,7 +71,18 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
   const [comboFlash, setComboFlash] = useState(null);
   const [displayScore, setDisplayScore] = useState(0);
 
-  const audioRef = useRef(null);
+  // Playback paths:
+  //   - BufferSource path (preferred): song.audioBuffer present → we create a
+  //     fresh AudioBufferSourceNode per play/resume, route it through the
+  //     AudioContext, and the song clock is anchored to ctx.currentTime.
+  //   - <audio> element path (fallback): song.audioBuffer missing (CORS) →
+  //     we fall back to the HTMLAudioElement wired up at the JSX level.
+  const useBufferSource = !!song.audioBuffer;
+  const audioRef = useRef(null);           // <audio> element (fallback path)
+  const sourceRef = useRef(null);          // active AudioBufferSourceNode
+  const sourceStartCtxTimeRef = useRef(0); // ctx.currentTime when current source started
+  const elapsedBeforePauseRef = useRef(0); // song-seconds of audible playback before current source
+  const audioStartCtxTimeRef = useRef(0);  // ctx.currentTime at which currentMs === 0
   const pausedRef = useRef(false);
   pausedRef.current = paused;
   const prevComboRef = useRef(0);
@@ -176,14 +187,72 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
     return () => window.removeEventListener("keydown", onKey);
   }, [phase]);
 
-  // Pause audio when paused state changes
+  // Pause audio when paused state changes.
+  //
+  // BufferSource path: AudioBufferSourceNode is one-shot, so pause = stop()
+  // the current node (and remember elapsed song-seconds), resume = create a
+  // fresh node and start(0, elapsed). The `audioStartCtxTime` anchor gets
+  // re-written on resume so the clock formula
+  //   currentMs = (nowCtx - audioStartCtxTime) * 1000 - latencyMs
+  // keeps reading the correct song position. No pauseAccumSec needed in
+  // this path — we rebase on every resume. When pausing during lead-in
+  // (no source running yet), we just advance the anchor by the pause
+  // duration so the lead-in "pauses" with the game.
+  //
+  // <audio> path: just pause/play the element. For that path we still need
+  // pauseAccumSec (lives in the game loop closure).
+  const pauseStartedRef = useRef(null); // ctx.currentTime when pause began (BufferSource lead-in pause)
   useEffect(() => {
-    if (!audioRef.current) return;
-    if (paused) audioRef.current.pause();
-    else if (phase === "playing" && audioRef.current.paused && stateRef.current.currentMs >= 0) {
-      audioRef.current.play().catch(() => {});
+    if (useBufferSource) {
+      const ctx = getCtx();
+      if (paused) {
+        const src = sourceRef.current;
+        if (src) {
+          // Playback in progress: stop the node and capture where we were.
+          const playedSec = Math.max(0, ctx.currentTime - sourceStartCtxTimeRef.current);
+          elapsedBeforePauseRef.current = elapsedBeforePauseRef.current + playedSec;
+          try { src.onended = null; } catch (_) {}
+          try { src.stop(); } catch (_) {}
+          try { src.disconnect(); } catch (_) {}
+          sourceRef.current = null;
+        } else {
+          // Pausing during lead-in (no source yet). Remember when pause began
+          // so we can shift the anchor forward on resume.
+          pauseStartedRef.current = ctx.currentTime;
+        }
+      } else if (phase === "playing") {
+        if (pauseStartedRef.current !== null) {
+          // Resuming from a lead-in pause: push the scheduled start moment
+          // forward by the exact pause duration. No source to restart.
+          const pauseDur = ctx.currentTime - pauseStartedRef.current;
+          audioStartCtxTimeRef.current += pauseDur;
+          pauseStartedRef.current = null;
+        } else if (stateRef.current.currentMs >= 0 && !sourceRef.current) {
+          // Resuming from a mid-song pause: start a fresh node at the
+          // paused offset.
+          if (ctx.state === "suspended") ctx.resume().catch(() => {});
+          const src = ctx.createBufferSource();
+          src.buffer = song.audioBuffer;
+          src.connect(ctx.destination);
+          const offsetSec = elapsedBeforePauseRef.current;
+          const startAt = ctx.currentTime;
+          try { src.start(0, offsetSec); } catch (e) { console.error("resume start failed", e); }
+          sourceRef.current = src;
+          sourceStartCtxTimeRef.current = startAt;
+          // Re-anchor the song clock so (nowCtx - audioStartCtxTime)*1000 -
+          // latencyMs == offsetSec*1000 at the instant we just started.
+          audioStartCtxTimeRef.current = startAt - offsetSec;
+        }
+      }
+    } else {
+      // <audio> fallback
+      if (!audioRef.current) return;
+      if (paused) audioRef.current.pause();
+      else if (phase === "playing" && audioRef.current.paused && stateRef.current.currentMs >= 0) {
+        audioRef.current.play().catch(() => {});
+      }
     }
-  }, [paused, phase]);
+  }, [paused, phase, useBufferSource, song.audioBuffer]);
 
   // --- Game loop (audio-synced) ---
   useEffect(() => {
@@ -192,80 +261,100 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
 
     // Single source of truth: the AudioContext clock. It's monotonic,
     // unaffected by tab throttling in the way performance.now can be, and
-    // directly comparable to the scheduled audio playback time.
+    // directly comparable to scheduled BufferSource playback time.
     const ctx = getCtx();
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
     const ctxStart = ctx.currentTime;                   // seconds
-    // audioStartCtxTime is the ctx.currentTime at which SONG POSITION 0
-    // will be AUDIBLE. It starts as an estimate (lead-in end) and gets
-    // re-anchored on audio.play() resolve using audio.currentTime.
-    let audioStartCtxTime = ctxStart + LEAD_IN_MS / 1000;
+
+    // audioStartCtxTime: the ctx.currentTime at which SONG POSITION 0 will be
+    // audible. Starts as an estimate (lead-in end) and is made exact the
+    // moment the BufferSource is scheduled. Lives in a ref so the pause
+    // effect can rewrite it on resume.
+    audioStartCtxTimeRef.current = ctxStart + LEAD_IN_MS / 1000;
+    elapsedBeforePauseRef.current = 0;
+
+    // <audio> fallback still needs pauseAccumSec because that path cannot
+    // restart at an exact offset — it plays through continuously and we
+    // just pause/unpause. BufferSource path rebases on resume instead.
     let pauseAccumSec = 0;
     let pauseStartedCtxTime = null;
     let audioStarted = false;
+
     // Latency between "audio sample requested at ctx time T" and "sample
-    // audible at the speakers" for the HTMLAudioElement. The <audio> tag
-    // bypasses the AudioContext entirely, so ctx.baseLatency /
-    // ctx.outputLatency (used in Wave 1B) don't apply — they describe the
-    // context's Web Audio graph. Rely on an empirical calibration constant.
-    const latencyMs = AUDIO_LATENCY_MS;
+    // audible at the speakers". For the BufferSource path, outputLatency +
+    // baseLatency describe the context's output graph — exactly what the
+    // player hears — so we add them in. AUDIO_LATENCY_MS remains as an
+    // empirical pad for element-level buffering / device jitter on top.
+    // For the <audio> fallback path the <audio> element bypasses the
+    // AudioContext, so only AUDIO_LATENCY_MS applies.
+    const extraLatencySec = useBufferSource ? getOutputLatencySec() : 0;
+    const latencyMs = AUDIO_LATENCY_MS + extraLatencySec * 1000;
 
     const tick = () => {
       const nowCtx = ctx.currentTime;
 
-      // Accumulate pause time so song time only counts unpaused time.
+      // For the <audio> fallback, accumulate pause time so song time only
+      // counts unpaused time (the element keeps its own playhead, but we
+      // re-derive current position from ctx time for consistency).
       if (pausedRef.current) {
-        if (pauseStartedCtxTime === null) pauseStartedCtxTime = nowCtx;
+        if (!useBufferSource && pauseStartedCtxTime === null) pauseStartedCtxTime = nowCtx;
         rafId = requestAnimationFrame(tick);
         return;
-      } else if (pauseStartedCtxTime !== null) {
+      } else if (!useBufferSource && pauseStartedCtxTime !== null) {
         pauseAccumSec += nowCtx - pauseStartedCtxTime;
         pauseStartedCtxTime = null;
       }
 
       const s = stateRef.current;
 
-      // Unified song clock: represents "song position currently audible at
-      // the speakers". Negative during lead-in, 0 when the first audio
-      // sample is audible, positive while music plays. A single formula
-      // end-to-end avoids the discontinuity that used to jump the clock
-      // backwards by latencyMs at the lead-in / play transition.
+      // Unified song clock: "song position currently audible at the speakers".
+      // Negative during lead-in, 0 when the first audio sample is audible,
+      // positive while music plays. A single formula end-to-end avoids the
+      // discontinuity that used to jump the clock at the lead-in / play
+      // transition.
       s.currentMs =
-        (nowCtx - audioStartCtxTime - pauseAccumSec) * 1000 - latencyMs;
+        (nowCtx - audioStartCtxTimeRef.current - pauseAccumSec) * 1000 - latencyMs;
 
-      // Kick off <audio> playback exactly once, at the scheduled song-start
-      // moment. On resolve, re-anchor the clock against audio.currentTime
-      // so the non-deterministic play() start latency doesn't leave the
-      // chart stranded ahead of (or behind) the actual music.
-      if (!audioStarted && audioRef.current && nowCtx >= audioStartCtxTime) {
+      // Kick off audio playback exactly once at the scheduled song-start moment.
+      if (!audioStarted && nowCtx >= audioStartCtxTimeRef.current) {
         audioStarted = true;
-        try { audioRef.current.currentTime = 0; } catch (_) {}
-        const pr = audioRef.current.play();
-        if (pr && pr.then) {
-          pr.then(() => {
-            // Re-anchor audioStartCtxTime so the song clock matches the
-            // actual playhead. Derivation: we want
-            //   s.currentMs === ac.currentTime*1000 - latencyMs
-            // at this instant, given
-            //   s.currentMs = (nowCtx - audioStartCtxTime - pauseAccumSec)*1000 - latencyMs.
-            // Solving:
-            //   audioStartCtxTime = nowCtx - ac.currentTime - pauseAccumSec
-            // This corrects both the non-deterministic play() start
-            // latency and any slop in the scheduling math. Guard against
-            // the rare case where currentTime is still exactly 0 (the
-            // element hasn't fed a sample yet) — in that case our
-            // original estimate is the best we have.
-            const ac = audioRef.current;
-            if (ac && ac.currentTime > 0) {
-              audioStartCtxTime =
-                ctx.currentTime - ac.currentTime - pauseAccumSec;
-            }
-          }).catch((e) => {
-            // Allow retry next tick if autoplay was rejected (rare: the
-            // user already gestured to start the game).
-            audioStarted = false;
-            console.error("audio play failed", e);
-          });
+        if (useBufferSource) {
+          // BufferSource path: create a node, connect, and start at
+          // ctx.currentTime. `source.start(when)` is deterministic — the
+          // first sample hits the graph at `when`, and `when ===
+          // ctx.currentTime` at the call site makes the anchor exact.
+          try {
+            const src = ctx.createBufferSource();
+            src.buffer = song.audioBuffer;
+            src.connect(ctx.destination);
+            const startAt = ctx.currentTime;
+            src.start(startAt);
+            sourceRef.current = src;
+            sourceStartCtxTimeRef.current = startAt;
+            // Rewrite the anchor to exactly `startAt`. Previously it was an
+            // estimate; now we know precisely when song position 0 begins.
+            audioStartCtxTimeRef.current = startAt;
+            elapsedBeforePauseRef.current = 0;
+          } catch (e) {
+            console.error("BufferSource start failed", e);
+          }
+        } else if (audioRef.current) {
+          // <audio> fallback: non-deterministic start latency, so on resolve
+          // we re-anchor against audio.currentTime (Wave 1B pattern).
+          try { audioRef.current.currentTime = 0; } catch (_) {}
+          const pr = audioRef.current.play();
+          if (pr && pr.then) {
+            pr.then(() => {
+              const ac = audioRef.current;
+              if (ac && ac.currentTime > 0) {
+                audioStartCtxTimeRef.current =
+                  ctx.currentTime - ac.currentTime - pauseAccumSec;
+              }
+            }).catch((e) => {
+              audioStarted = false; // allow retry next tick
+              console.error("audio play failed", e);
+            });
+          }
         }
       }
 
@@ -330,10 +419,14 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
         ? Math.max(...s.notes.map((n) => n.time + (n.duration || 0)))
         : 0;
       const allJudged = s.notes.every((n) => n.judged);
-      const audioEnded = audioRef.current?.ended;
+      // BufferSource path: no `.ended` property; use song duration. Fallback
+      // path: use the HTMLAudioElement's `ended`.
+      const audioEnded = useBufferSource
+        ? (song.durationMs > 0 && s.currentMs > song.durationMs)
+        : audioRef.current?.ended;
       if ((allJudged && s.currentMs > lastNoteTime + 600) || audioEnded) {
         setPhase("done");
-        if (audioRef.current) audioRef.current.pause();
+        stopPlayback();
         const final = finalStats(s, cfg);
         const totalJudged = final.perfect + final.good + final.miss;
         const accuracy = totalJudged ? (final.perfect + final.good) / totalJudged : 0;
@@ -348,16 +441,37 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
     };
     rafId = requestAnimationFrame(tick);
     const capturedAudio = audioRef.current;
+
+    // Local helper: tear down whichever playback path is live.
+    function stopPlayback() {
+      if (sourceRef.current) {
+        try { sourceRef.current.onended = null; } catch (_) {}
+        try { sourceRef.current.stop(); } catch (_) {}
+        try { sourceRef.current.disconnect(); } catch (_) {}
+        sourceRef.current = null;
+      }
+      if (capturedAudio) {
+        try { capturedAudio.pause(); } catch (_) {}
+      }
+    }
+
     return () => {
       cancelAnimationFrame(rafId);
-      if (capturedAudio) capturedAudio.pause();
+      stopPlayback();
     };
-  }, [phase, onFinish, renderTick, cfg, song.id, difficulty, checkComboThreshold]);
+  }, [phase, onFinish, renderTick, cfg, song.id, song.audioBuffer, song.durationMs, difficulty, checkComboThreshold, useBufferSource]);
 
-  // Cleanup audio on unmount
+  // Cleanup on unmount (covers the case where we leave the game without
+  // going through the "done" exit path — e.g. user clicks quit).
   useEffect(() => {
     const capturedAudio = audioRef.current;
     return () => {
+      if (sourceRef.current) {
+        try { sourceRef.current.onended = null; } catch (_) {}
+        try { sourceRef.current.stop(); } catch (_) {}
+        try { sourceRef.current.disconnect(); } catch (_) {}
+        sourceRef.current = null;
+      }
       if (capturedAudio) {
         capturedAudio.pause();
         capturedAudio.currentTime = 0;
@@ -378,7 +492,10 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
       <div style={styles.bgGlowB} />
       <div style={styles.vignette} />
 
-      <audio ref={audioRef} src={song.audioUrl} preload="auto" crossOrigin="anonymous" />
+      {/* Only rendered when the BufferSource path isn't available (CORS fallback). */}
+      {!useBufferSource && (
+        <audio ref={audioRef} src={song.audioUrl} preload="auto" crossOrigin="anonymous" />
+      )}
 
       <Hud
         score={Math.round(displayScore)}

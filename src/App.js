@@ -12,7 +12,10 @@ export default function App() {
   const [difficulty, setDifficulty] = useState("medium");
   const [stats, setStats] = useState(null);
 
-  useEffect(() => { startKeyboardSource(); }, []);
+  useEffect(() => {
+    const stop = startKeyboardSource();
+    return () => { stop?.(); };
+  }, []);
 
   return (
     <>
