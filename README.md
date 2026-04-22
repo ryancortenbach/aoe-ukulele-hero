@@ -90,6 +90,24 @@ CE
 Each row is one rhythmic unit (half-beat by default). To add audio later,
 set `song.audioSrc` and play it from `Game.jsx` at `phase === "playing"`.
 
+### Audio playback + clock sync
+
+Songs play through the Web Audio API rather than a bare `<audio>` element.
+When `audio/audioEngine.js` can decode a song's file into an `AudioBuffer`
+(the common case for uploaded files and same-origin assets), playback runs
+through an `AudioBufferSourceNode` scheduled at a deterministic
+`ctx.currentTime`. The game-loop clock is anchored to the same
+`AudioContext` timeline and subtracts `ctx.outputLatency + ctx.baseLatency`
+so the visual scroll lines up with what the player actually hears rather
+than with the buffer playhead. Pause/resume rebases that anchor so no
+pause-accumulator drift can creep in on this path. An `HTMLAudioElement`
+fallback is kept for CORS-restricted remote sources that can't be decoded;
+that path uses a slightly larger constant latency pad and tracks pauses via
+a `pauseAccumSec` accumulator. See the top-of-file comment block in
+`components/Game.jsx` for the full rationale and the
+`AUDIO_LATENCY_MS_BUFFER` / `AUDIO_LATENCY_MS_ELEMENT` constants in
+`theme.js`.
+
 ## Hardware mode
 
 See [`hardware/README.md`](hardware/README.md) for wiring, flashing, and the
