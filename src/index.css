@@ -93,3 +93,43 @@ button:focus-visible,
   80%  { transform: scale(1.05) rotate(-1deg); }
   100% { opacity: 1; transform: scale(1) rotate(0); letter-spacing: 0; }
 }
+
+/* ----- Note lifecycle animations ----- */
+
+/* Notes that just appeared at the top of the highway pop + blur in. */
+@keyframes uh-note-enter {
+  0%   { opacity: 0; transform: scale(0.4) translateY(-12px); filter: blur(6px); }
+  60%  { opacity: 1; transform: scale(1.12) translateY(0); filter: blur(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+}
+
+/* Missed tap notes keep falling past the hit line, fading + rotating. */
+@keyframes uh-note-miss-fall {
+  0%   { opacity: 1; transform: translateY(0) rotate(0deg) scale(1); filter: saturate(1); }
+  40%  { opacity: 0.9; transform: translateY(36px) rotate(-6deg) scale(0.96); filter: saturate(0.3); }
+  100% { opacity: 0; transform: translateY(110px) rotate(-14deg) scale(0.7); filter: saturate(0); }
+}
+
+/* Full-screen red vignette when a miss lands. */
+@keyframes uh-miss-vignette {
+  0%   { opacity: 0; }
+  15%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Red wash over the specific lane that was missed. */
+@keyframes uh-lane-miss-flash {
+  0%   { opacity: 0; }
+  10%  { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+
+/* Small horizontal shake on the highway when a miss lands. */
+@keyframes uh-miss-shake {
+  0%, 100% { transform: translateX(0); }
+  15%      { transform: translateX(-6px); }
+  30%      { transform: translateX(5px); }
+  45%      { transform: translateX(-4px); }
+  60%      { transform: translateX(3px); }
+  80%      { transform: translateX(-2px); }
+}

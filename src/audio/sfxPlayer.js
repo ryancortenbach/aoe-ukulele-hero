@@ -77,7 +77,19 @@ export function initSfx() {
   return loadPromise;
 }
 
+// Press/hit/miss/combo cues fire on every keypress — noisy on top of song audio.
+// Muted here; keep menu + countdown SFX audible.
+const MUTED_SFX = new Set([
+  'hit-perfect',
+  'hit-good',
+  'miss',
+  'combo-10',
+  'combo-25',
+  'combo-50',
+]);
+
 export function playSfx(name) {
+  if (MUTED_SFX.has(name)) return;
   const c = getContext();
   if (!c) return; // no audio available yet
   // Resume on first gesture if needed.

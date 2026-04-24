@@ -5,7 +5,7 @@ export function multiplierFor(combo) {
   return 1;
 }
 
-export default function Hud({ score, combo, accuracy, progress }) {
+export default function Hud({ score, combo, accuracy, progress, song, difficulty }) {
   const mult = multiplierFor(combo);
   return (
     <div style={styles.root}>
@@ -15,6 +15,24 @@ export default function Hud({ score, combo, accuracy, progress }) {
       </div>
 
       <div style={styles.center}>
+        {song && (
+          <div style={styles.songLine}>
+            <span style={styles.songArtist}>{song.artist}</span>
+            <span style={styles.songSep}>·</span>
+            <span style={styles.songTitle}>{song.title}</span>
+            {difficulty && (
+              <span
+                style={{
+                  ...styles.diffBadge,
+                  color: difficulty.color,
+                  borderColor: difficulty.color,
+                }}
+              >
+                {difficulty.label.toUpperCase()}
+              </span>
+            )}
+          </div>
+        )}
         <div style={styles.progressTrack}>
           <div
             style={{
@@ -108,5 +126,43 @@ const styles = {
     letterSpacing: "0.15em",
     textAlign: "center",
     color: COLORS.textDim,
+  },
+  songLine: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "0.55rem",
+    marginBottom: "0.45rem",
+    fontSize: "0.78rem",
+    letterSpacing: "0.05em",
+    textShadow: "0 0 10px #000a",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  songArtist: {
+    color: COLORS.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: "0.18em",
+    fontSize: "0.62rem",
+  },
+  songSep: {
+    color: "#ffffff33",
+    fontSize: "0.7rem",
+  },
+  songTitle: {
+    color: "#ffffffee",
+    fontWeight: 700,
+    fontSize: "0.85rem",
+  },
+  diffBadge: {
+    display: "inline-block",
+    marginLeft: "0.25rem",
+    padding: "1px 7px",
+    border: "1px solid #fff",
+    borderRadius: 10,
+    fontSize: "0.55rem",
+    letterSpacing: "0.2em",
+    fontWeight: 700,
   },
 };

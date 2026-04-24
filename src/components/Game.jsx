@@ -77,6 +77,9 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
   const [particles, setParticles] = useState([]);
   const [comboFlash, setComboFlash] = useState(null);
   const [displayScore, setDisplayScore] = useState(0);
+  // Miss FX — lane-local red wash + timestamp for screen shake/vignette.
+  const [missFlash, setMissFlash] = useState({});   // { [laneId]: ts }
+  const [missShake, setMissShake] = useState(0);    // timestamp, 0 when idle
 
   // Playback paths:
   //   - BufferSource path (preferred): song.audioBuffer present → we create a
@@ -112,6 +115,7 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
     stateRef.current = createState(chart);
     prevComboRef.current = 0;
     setHitFx({}); setParticles([]); setComboFlash(null); setDisplayScore(0);
+    setMissFlash({}); setMissShake(0);
     setPaused(false);
     setPhase("countdown");
   }, [chart]);
@@ -388,15 +392,18 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
       }
 
       // Auto-miss taps that passed the hit window
+      const missedLanes = [];
       for (const n of s.notes) {
         if (n.judged || n.kind === "hold") continue;
         if (s.currentMs - n.time > cfg.good) {
           n.judged = true;
           n.result = "miss";
+          n.judgedAt = performance.now();
           s.stats.miss += 1;
           s.stats.judgedForAcc += 1;
           s.combo = 0;
           autoMissed = true;
+          missedLanes.push(n.lane);
         }
       }
       // Auto-miss hold note HEADS that weren't pressed in time
@@ -406,14 +413,32 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
         if (s.currentMs - n.time > cfg.good) {
           n.judged = true;
           n.result = "miss";
+          n.judgedAt = performance.now();
           s.stats.miss += 1;
           s.stats.judgedForAcc += 1;
           s.combo = 0;
           autoMissed = true;
+          missedLanes.push(n.lane);
         }
       }
 
-      if (autoMissed) playSfx("miss");
+      if (autoMissed) {
+        playSfx("miss");
+        const ts = performance.now();
+        setMissShake(ts);
+        setMissFlash((prev) => {
+          const next = { ...prev };
+          for (const laneId of missedLanes) next[laneId] = ts;
+          return next;
+        });
+        setHitFx((prev) => {
+          const next = { ...prev };
+          for (const laneId of missedLanes) {
+            next[laneId] = { kind: "miss", text: "MISS", ts };
+          }
+          return next;
+        });
+      }
       if (s.combo > comboBefore) checkComboThreshold(s.combo);
       else if (s.combo === 0 && comboBefore > 0) prevComboRef.current = 0;
 
@@ -533,6 +558,8 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
         combo={s.combo}
         accuracy={accuracy}
         progress={progress}
+        song={song}
+        difficulty={cfg}
       />
 
       <HighwayView
@@ -541,15 +568,6 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
         lanePressed={lanePressed}
         particles={particles}
       />
-
-      {/* Difficulty + song label */}
-      <div style={styles.songTag}>
-        <div style={styles.songTagArtist}>{song.artist}</div>
-        <div style={styles.songTagTitle}>{song.title}</div>
-        <div style={{ ...styles.songTagDiff, color: cfg.color, borderColor: cfg.color }}>
-          {cfg.label.toUpperCase()}
-        </div>
-      </div>
 
       {comboFlash && (
         <ComboFlash key={comboFlash.ts} flash={comboFlash} onDone={() => setComboFlash(null)} />
@@ -1168,17 +1186,19 @@ const styles = {
   },
   pauseBtn: {
     position: "absolute",
-    top: 16,
-    right: 16,
+    bottom: 20,
+    right: 20,
     width: 40,
     height: 40,
     borderRadius: "50%",
-    background: "#ffffff10",
+    background: "#00000099",
     border: "1px solid #ffffff33",
     color: "#fff",
     cursor: "pointer",
     fontSize: "0.9rem",
     zIndex: 20,
     fontFamily: FONT_STACK,
+    backdropFilter: "blur(4px)",
+    WebkitBackdropFilter: "blur(4px)",
   },
 };

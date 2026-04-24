@@ -101,6 +101,78 @@ const DEFAULT_SOURCES = [
     color: "#4d9eff",
     url: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview126/v4/62/e1/98/62e19826-cd13-6eff-390e-dbca502bb7b5/mzaf_8006535252627949661.plus.aac.p.m4a",
   },
+
+  // More Dua Lipa
+  {
+    id: "dont-start-now",
+    title: "Don't Start Now",
+    artist: "Dua Lipa",
+    bpm: 124,
+    color: "#f9c74f",
+    url: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/24/3d/34/243d3413-a0fc-b229-f54a-1715ebd3a9ca/mzaf_11578996572221800393.plus.aac.p.m4a",
+  },
+  {
+    id: "houdini",
+    title: "Houdini",
+    artist: "Dua Lipa",
+    bpm: 129,
+    color: "#ef476f",
+    url: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/2c/da/b5/2cdab5c6-04a8-5231-c697-00101e876479/mzaf_5586859405346659517.plus.aac.p.m4a",
+  },
+  {
+    id: "new-rules",
+    title: "New Rules",
+    artist: "Dua Lipa",
+    bpm: 116,
+    color: "#ffadad",
+    url: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/07/2e/84/072e84d4-2970-034b-0941-60c112f36a2b/mzaf_5630674587159822008.plus.aac.p.m4a",
+  },
+
+  // Justin Bieber
+  {
+    id: "peaches",
+    title: "Peaches (feat. Daniel Caesar & GIVĒON)",
+    artist: "Justin Bieber",
+    bpm: 90,
+    color: "#ffb4a2",
+    url: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/c9/6d/b1/c96db138-df15-d3d1-ef9d-98ef9d350960/mzaf_9411021956242812289.plus.aac.p.m4a",
+  },
+  {
+    id: "sorry",
+    title: "Sorry",
+    artist: "Justin Bieber",
+    bpm: 100,
+    color: "#a0c4ff",
+    url: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/66/eb/29/66eb29c0-c2f9-d9df-8af3-3bf2562c9d7c/mzaf_4099789285264521999.plus.aac.p.m4a",
+  },
+  {
+    id: "stay",
+    title: "STAY",
+    artist: "The Kid LAROI & Justin Bieber",
+    bpm: 170,
+    color: "#bdb2ff",
+    url: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/d7/4a/84/d74a84d5-9afa-761e-b632-baab55c2a23b/mzaf_11865500880477235553.plus.aac.p.m4a",
+  },
+
+  // Glam-rock staple
+  {
+    id: "ballroom-blitz",
+    title: "The Ballroom Blitz",
+    artist: "Sweet",
+    bpm: 137,
+    color: "#ffd166",
+    url: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/cf/9c/82/cf9c8228-aac1-fad9-7c1c-e2eaeb27e5c4/mzaf_10179300650417231842.plus.aac.p.m4a",
+  },
+
+  // More Ed Sheeran
+  {
+    id: "perfect",
+    title: "Perfect",
+    artist: "Ed Sheeran",
+    bpm: 95,
+    color: "#caffbf",
+    url: "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/c7/ba/bc/c7babc66-f598-aaa6-bcf6-307281795817/mzaf_16337361235117168274.plus.aac.p.m4a",
+  },
 ];
 
 const state = {
