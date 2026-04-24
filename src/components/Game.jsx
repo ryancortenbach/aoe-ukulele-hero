@@ -375,10 +375,26 @@ export default function Game({ song, difficulty = "medium", onFinish, onExit }) 
       const comboBefore = s.combo;
       let autoMissed = false;
 
-      // Handle active holds — auto-complete when tail reaches hit line
+      // Handle active holds — trickle shred score while held, auto-complete at tail
+      const SHRED_SCORE_PER_MS = 0.08;
       for (let i = 0; i < 4; i++) {
         const heldNote = s.held[i];
-        if (heldNote && s.currentMs >= heldNote.time + heldNote.duration) {
+        if (!heldNote) continue;
+        // Shred bonus: pay per-ms while the note is actively held. Tracked on
+        // the note so pause/resume and multi-frame jitter don't double-count.
+        if (heldNote.shredStartMs === undefined) {
+          heldNote.shredStartMs = Math.max(heldNote.time, s.currentMs);
+          heldNote.shredGranted = 0;
+        }
+        const heldFor = Math.max(0, s.currentMs - heldNote.shredStartMs);
+        const owed = heldFor * SHRED_SCORE_PER_MS *
+                     multiplierFor(s.combo) * cfg.scoreMult;
+        if (owed > heldNote.shredGranted) {
+          s.score += (owed - heldNote.shredGranted);
+          heldNote.shredGranted = owed;
+        }
+        // Auto-complete when tail reaches hit line
+        if (s.currentMs >= heldNote.time + heldNote.duration) {
           heldNote.judged = true;
           heldNote.result = heldNote.currentResult || "good";
           s.stats[heldNote.result] += 1;
@@ -785,26 +801,80 @@ function HighwayView({ state, hitFx, lanePressed, particles }) {
         {/* Hit circles */}
         {LANES.map((lane) => {
           const isPressed = !!lanePressed[lane.id];
+          const isShredding = !!state.held[lane.id];
           return (
-            <div
-              key={`target-${lane.id}`}
-              style={{
-                position: "absolute",
-                left: lane.id * laneW + (laneW - noteSizePx) / 2,
-                top: hitY - noteSizePx * 0.27,
-                width: noteSizePx,
-                height: noteSizePx * 0.55,
-                borderRadius: noteSizePx,
-                border: `3px solid ${isPressed ? "#fff" : lane.color + "cc"}`,
-                boxShadow: isPressed
-                  ? `0 0 40px ${lane.glow}, 0 0 80px ${lane.glow}66, inset 0 0 24px ${lane.color}`
-                  : `0 0 14px ${lane.color}77`,
-                background: isPressed
-                  ? `radial-gradient(ellipse at 50% 40%, ${lane.color}cc, transparent 70%)`
-                  : "transparent",
-                transition: "box-shadow 0.08s, background 0.08s",
-              }}
-            />
+            <div key={`target-${lane.id}`} style={{ position: "absolute", left: lane.id * laneW, top: 0, width: laneW, height: "100%", pointerEvents: "none" }}>
+              <div
+                style={{
+                  position: "absolute",
+                  left: (laneW - noteSizePx) / 2,
+                  top: hitY - noteSizePx * 0.27,
+                  width: noteSizePx,
+                  height: noteSizePx * 0.55,
+                  borderRadius: noteSizePx,
+                  border: `3px solid ${isPressed || isShredding ? "#fff" : lane.color + "cc"}`,
+                  boxShadow: isShredding
+                    ? `0 0 60px #fff, 0 0 120px ${lane.glow}, inset 0 0 36px ${lane.color}`
+                    : isPressed
+                      ? `0 0 40px ${lane.glow}, 0 0 80px ${lane.glow}66, inset 0 0 24px ${lane.color}`
+                      : `0 0 14px ${lane.color}77`,
+                  background: isPressed || isShredding
+                    ? `radial-gradient(ellipse at 50% 40%, ${lane.color}cc, transparent 70%)`
+                    : "transparent",
+                  transition: "box-shadow 0.08s, background 0.08s",
+                }}
+              />
+              {isShredding && (
+                <>
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: (laneW - noteSizePx * 1.1) / 2,
+                      top: hitY - noteSizePx * 1.8,
+                      width: noteSizePx * 1.1,
+                      height: noteSizePx * 1.8,
+                      background: `radial-gradient(ellipse at 50% 100%, #fff 0%, ${lane.color} 35%, ${lane.glow}00 75%)`,
+                      filter: "blur(2px)",
+                      mixBlendMode: "screen",
+                      animation: "uh-shred-flame 0.35s ease-in-out infinite alternate",
+                      transformOrigin: "50% 100%",
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: (laneW - noteSizePx * 1.5) / 2,
+                      top: hitY - noteSizePx * 0.75,
+                      width: noteSizePx * 1.5,
+                      height: noteSizePx * 1.5,
+                      borderRadius: "50%",
+                      border: `2px solid ${lane.color}`,
+                      boxShadow: `0 0 30px ${lane.glow}, inset 0 0 30px ${lane.glow}`,
+                      animation: "uh-shred-ring 0.6s ease-out infinite",
+                      opacity: 0.9,
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: hitY - noteSizePx * 2.6,
+                      width: laneW,
+                      textAlign: "center",
+                      fontFamily: FONT_STACK,
+                      fontSize: "1.1rem",
+                      fontWeight: 900,
+                      letterSpacing: "0.2em",
+                      color: "#fff",
+                      textShadow: `0 0 12px ${lane.color}, 0 0 24px ${lane.glow}, 0 0 40px #fff`,
+                      animation: "uh-shred-text 0.4s ease-out infinite alternate",
+                    }}
+                  >
+                    SHRED!
+                  </div>
+                </>
+              )}
+            </div>
           );
         })}
       </div>

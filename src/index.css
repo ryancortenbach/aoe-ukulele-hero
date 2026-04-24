@@ -124,6 +124,24 @@ button:focus-visible,
   100% { opacity: 0; }
 }
 
+/* Shred: flame plume pulses from the hit circle while a hold is active. */
+@keyframes uh-shred-flame {
+  0%   { transform: scaleY(0.85) scaleX(0.9); opacity: 0.75; }
+  100% { transform: scaleY(1.15) scaleX(1.05); opacity: 1; }
+}
+
+/* Shred: expanding ring underneath the shred flame. */
+@keyframes uh-shred-ring {
+  0%   { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* Shred: SHRED! label wiggles while the bonus accumulates. */
+@keyframes uh-shred-text {
+  0%   { transform: translateY(0) scale(1);    letter-spacing: 0.2em; }
+  100% { transform: translateY(-4px) scale(1.1); letter-spacing: 0.3em; }
+}
+
 /* Small horizontal shake on the highway when a miss lands. */
 @keyframes uh-miss-shake {
   0%, 100% { transform: translateX(0); }
